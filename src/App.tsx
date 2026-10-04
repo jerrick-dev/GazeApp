@@ -16,6 +16,7 @@ function App() {
   const [selectedKey, setSelectedKey] = useState(todayKey)
   const [journalOpen, setJournalOpen] = useState(false)
   const [glowing, setGlowing] = useState(false)
+  const [calendarOpen, setCalendarOpen] = useState(false)
 
   const loggedToday = Boolean(logs[todayKey]?.used)
   const usedThisMonth = Object.values(logs).filter((log) => {
@@ -34,10 +35,6 @@ function App() {
 
   return (
     <div className="app-shell">
-      <div className="orb orb-one" />
-      <div className="orb orb-two" />
-      <div className="orb orb-three" />
-
       <header className="top-bar">
         <div>
           <p className="kicker">Daily presence</p>
@@ -46,7 +43,7 @@ function App() {
         <p className="month-count">{usedThisMonth} days of contact this month</p>
       </header>
 
-      <main className="layout">
+      <main className={`layout ${calendarOpen ? 'is-calendar-open' : 'is-eye-only'}`}>
         <section className="hero">
           <EyeStage
             glowing={glowing}
@@ -60,17 +57,21 @@ function App() {
             selectedKey={selectedKey}
             logs={logs}
             onSelectDate={openJournal}
+            calendarOpen={calendarOpen}
+            onToggleCalendar={() => setCalendarOpen((current) => !current)}
           />
         </section>
 
-        <MonthCalendar
-          month={month}
-          todayKey={todayKey}
-          selectedKey={selectedKey}
-          logs={logs}
-          onSelectDate={openJournal}
-          onShiftMonth={(amount) => setMonth((current) => addMonths(current, amount))}
-        />
+        {calendarOpen ? (
+          <MonthCalendar
+            month={month}
+            todayKey={todayKey}
+            selectedKey={selectedKey}
+            logs={logs}
+            onSelectDate={openJournal}
+            onShiftMonth={(amount) => setMonth((current) => addMonths(current, amount))}
+          />
+        ) : null}
       </main>
 
       {journalOpen ? (

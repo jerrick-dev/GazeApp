@@ -21,7 +21,7 @@ export function MonthCalendar({
   const cells = buildMonthGrid(month, todayKey)
 
   return (
-    <section className="calendar-card" aria-label="Monthly gaze calendar">
+    <section id="month-calendar" className="calendar-card" aria-label="Monthly gaze calendar">
       <header className="calendar-header">
         <button type="button" className="nav-btn" onClick={() => onShiftMonth(-1)} aria-label="Previous month">
           ‹

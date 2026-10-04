@@ -1,6 +1,7 @@
 :root {
-  color: #2c4a5e;
-  background: #d7eef8;
+  color: #d8e7ec;
+  background: #06090b;
+  color-scheme: dark;
   font-family: Outfit, sans-serif;
   font-weight: 400;
   line-height: 1.5;
@@ -35,5 +36,5 @@ h2,
 .journal-card h2 {
   font-family: Fraunces, Georgia, serif;
   font-weight: 520;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
 }

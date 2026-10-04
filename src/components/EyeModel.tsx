@@ -5,6 +5,7 @@ import * as THREE from 'three'
 type EyeModelProps = {
   glowing: boolean
   loggedToday: boolean
+  onSelect: () => void
 }
 
 type AsciiEyeTexture = {
@@ -74,11 +75,34 @@ function createAsciiSurfaceGeometry() {
   return geometry
 }
 
+function createGlareTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 128
+  canvas.height = 128
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('Unable to create eye glare canvas')
+  }
+
+  const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64)
+  gradient.addColorStop(0, 'rgba(255, 255, 255, 0.98)')
+  gradient.addColorStop(0.14, 'rgba(226, 247, 252, 0.82)')
+  gradient.addColorStop(0.42, 'rgba(151, 211, 231, 0.26)')
+  gradient.addColorStop(1, 'rgba(126, 184, 212, 0)')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, 128, 128)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
+}
+
 function drawAsciiEye(
   asset: AsciiEyeTexture,
   gazeX: number,
   gazeY: number,
   brightness: number,
+  irisGlow: number,
 ) {
   const { context } = asset
   const centerX = CANVAS_WIDTH / 2
@@ -120,8 +144,18 @@ function drawAsciiEye(
     }
   }
 
-  const drawGlyph = (glyph: string, pixelX: number, pixelY: number, alpha: number) => {
-    context.fillStyle = `rgba(255, 255, 255, ${Math.min(alpha, 1)})`
+  const drawGlyph = (
+    glyph: string,
+    pixelX: number,
+    pixelY: number,
+    alpha: number,
+    glow = 0,
+  ) => {
+    context.shadowColor = `rgba(77, 224, 255, ${glow * 0.95})`
+    context.shadowBlur = glow * 18
+    const red = Math.round(255 - glow * 72)
+    const green = Math.round(255 - glow * 18)
+    context.fillStyle = `rgba(${red}, ${green}, 255, ${Math.min(alpha, 1)})`
     context.fillText(glyph, pixelX, pixelY)
   }
 
@@ -212,18 +246,23 @@ function drawAsciiEye(
 
       const jitterX = (hash(patternRow, patternColumn, 17) - 0.5) * 3.2
       const jitterY = (hash(patternRow, patternColumn, 18) - 0.5) * 2.2
-      drawGlyph(glyph, pixelX + jitterX, pixelY + jitterY, alpha)
+      drawGlyph(glyph, pixelX + jitterX, pixelY + jitterY, alpha, irisGlow)
     }
   }
 
   asset.texture.needsUpdate = true
 }
 
-export function EyeModel({ glowing, loggedToday }: EyeModelProps) {
+export function EyeModel({ glowing, loggedToday, onSelect }: EyeModelProps) {
   const group = useRef<THREE.Group>(null)
   const eyeBody = useRef<THREE.Group>(null)
+  const glare = useRef<THREE.Sprite>(null)
+  const irisInteraction = useRef<THREE.Group>(null)
+  const irisHovered = useRef(false)
+  const irisGlowAmount = useRef(0)
   const asset = useMemo(() => createAsciiEyeTexture(), [])
   const asciiSurface = useMemo(() => createAsciiSurfaceGeometry(), [])
+  const glareTexture = useMemo(() => createGlareTexture(), [])
   const gaze = useRef({
     x: 0,
     y: 0,
@@ -231,27 +270,30 @@ export function EyeModel({ glowing, loggedToday }: EyeModelProps) {
     velocityY: 0,
     renderedX: Number.NaN,
     renderedY: Number.NaN,
+    renderedGlow: Number.NaN,
   })
   const motion = useRef({ rotationX: 0, rotationY: 0, velocityX: 0, velocityY: 0 })
   const brightness = glowing ? 1 : loggedToday ? 0.97 : 0.94
 
   useEffect(() => {
-    drawAsciiEye(asset, gaze.current.x, gaze.current.y, brightness)
+    drawAsciiEye(asset, gaze.current.x, gaze.current.y, brightness, irisGlowAmount.current)
     gaze.current.renderedX = gaze.current.x
     gaze.current.renderedY = gaze.current.y
+    gaze.current.renderedGlow = irisGlowAmount.current
   }, [asset, brightness])
 
   useEffect(() => () => asset.texture.dispose(), [asset])
   useEffect(() => () => asciiSurface.dispose(), [asciiSurface])
+  useEffect(() => () => glareTexture.dispose(), [glareTexture])
 
   useFrame((state, delta) => {
     const time = state.clock.elapsedTime
     const frameDelta = Math.min(delta, 1 / 30)
     const targetX = state.pointer.x * CANVAS_WIDTH * 0.04
     const targetY = -state.pointer.y * CANVAS_HEIGHT * 0.035
-    gaze.current.velocityX += (targetX - gaze.current.x) * 36 * frameDelta
-    gaze.current.velocityY += (targetY - gaze.current.y) * 36 * frameDelta
-    const gazeDamping = Math.exp(-8 * frameDelta)
+    gaze.current.velocityX += (targetX - gaze.current.x) * 64 * frameDelta
+    gaze.current.velocityY += (targetY - gaze.current.y) * 64 * frameDelta
+    const gazeDamping = Math.exp(-10 * frameDelta)
     gaze.current.velocityX *= gazeDamping
     gaze.current.velocityY *= gazeDamping
     gaze.current.x += gaze.current.velocityX * frameDelta
@@ -259,9 +301,9 @@ export function EyeModel({ glowing, loggedToday }: EyeModelProps) {
 
     const targetRotationX = -state.pointer.y * 0.115
     const targetRotationY = state.pointer.x * 0.18
-    motion.current.velocityX += (targetRotationX - motion.current.rotationX) * 24 * frameDelta
-    motion.current.velocityY += (targetRotationY - motion.current.rotationY) * 24 * frameDelta
-    const rotationDamping = Math.exp(-6.2 * frameDelta)
+    motion.current.velocityX += (targetRotationX - motion.current.rotationX) * 44 * frameDelta
+    motion.current.velocityY += (targetRotationY - motion.current.rotationY) * 44 * frameDelta
+    const rotationDamping = Math.exp(-8.5 * frameDelta)
     motion.current.velocityX *= rotationDamping
     motion.current.velocityY *= rotationDamping
     motion.current.rotationX += motion.current.velocityX * frameDelta
@@ -290,20 +332,71 @@ export function EyeModel({ glowing, loggedToday }: EyeModelProps) {
       )
     }
 
+    if (glare.current) {
+      const lookX = gaze.current.x / (CANVAS_WIDTH * 0.04)
+      const lookY = gaze.current.y / (CANVAS_HEIGHT * 0.035)
+      const targetGlareX = lookX * 0.56 - 0.28
+      const targetGlareY = -lookY * 0.4 + 0.28
+      const normalizedSurfaceX = targetGlareX / (5.5 / 2)
+      const normalizedSurfaceY = targetGlareY / (3.1 / 2)
+      const surfaceLift = 0.46 * (1 - Math.pow(Math.abs(normalizedSurfaceX), 1.55))
+      const surfaceTaper = 0.055 * normalizedSurfaceY * normalizedSurfaceY
+      const targetGlareZ = 0.98 + 0.08 + surfaceLift - surfaceTaper + 0.045
+
+      glare.current.position.x = THREE.MathUtils.lerp(glare.current.position.x, targetGlareX, 0.2)
+      glare.current.position.y = THREE.MathUtils.lerp(glare.current.position.y, targetGlareY, 0.2)
+      glare.current.position.z = THREE.MathUtils.lerp(glare.current.position.z, targetGlareZ, 0.2)
+
+      const glareScale = (glowing ? 0.58 : loggedToday ? 0.5 : 0.44)
+        * (1 + Math.sin(time * 1.8) * 0.035)
+      glare.current.scale.set(glareScale, glareScale, 1)
+      const glareMaterial = glare.current.material as THREE.SpriteMaterial
+      glareMaterial.opacity = THREE.MathUtils.lerp(
+        glareMaterial.opacity,
+        glowing ? 0.9 : loggedToday ? 0.72 : 0.58,
+        0.08,
+      )
+    }
+
+    if (irisInteraction.current) {
+      const irisCanvasX = CANVAS_WIDTH * 0.028 + gaze.current.x
+      const irisCanvasY = -CANVAS_HEIGHT * 0.048 + gaze.current.y
+      const irisWorldX = (irisCanvasX / CANVAS_WIDTH) * 5.5
+      const irisWorldY = -(irisCanvasY / CANVAS_HEIGHT) * 3.1
+      const normalizedSurfaceX = irisWorldX / (5.5 / 2)
+      const normalizedSurfaceY = irisWorldY / (3.1 / 2)
+      const surfaceLift = 0.46 * (1 - Math.pow(Math.abs(normalizedSurfaceX), 1.55))
+      const surfaceTaper = 0.055 * normalizedSurfaceY * normalizedSurfaceY
+
+      irisInteraction.current.position.set(
+        irisWorldX,
+        irisWorldY,
+        0.98 + 0.08 + surfaceLift - surfaceTaper + 0.055,
+      )
+    }
+
+    irisGlowAmount.current = THREE.MathUtils.lerp(
+      irisGlowAmount.current,
+      irisHovered.current ? 1 : 0,
+      irisHovered.current ? 0.2 : 0.14,
+    )
+
     if (
       Math.abs(gaze.current.x - gaze.current.renderedX) > 0.35
       || Math.abs(gaze.current.y - gaze.current.renderedY) > 0.35
+      || Math.abs(irisGlowAmount.current - gaze.current.renderedGlow) > 0.015
     ) {
-      drawAsciiEye(asset, gaze.current.x, gaze.current.y, brightness)
+      drawAsciiEye(asset, gaze.current.x, gaze.current.y, brightness, irisGlowAmount.current)
       gaze.current.renderedX = gaze.current.x
       gaze.current.renderedY = gaze.current.y
+      gaze.current.renderedGlow = irisGlowAmount.current
     }
   })
 
   return (
     <group ref={group}>
       <group ref={eyeBody} scale={BASE_EYE_SCALE}>
-        <mesh scale={[1.72, 1.46, 1.36]}>
+        <mesh scale={[1.72, 1.46, 1.36]} raycast={() => {}}>
           <sphereGeometry args={[1, 128, 96]} />
           <meshPhysicalMaterial
             color="#0b0c11"
@@ -316,7 +409,34 @@ export function EyeModel({ glowing, loggedToday }: EyeModelProps) {
           />
         </mesh>
 
-        <mesh position={[0, 0, 0.98]}>
+        <group ref={irisInteraction} position={[0.154, 0.149, 1.57]}>
+          <mesh
+            scale={[0.82, 0.93, 1]}
+            position={[0, 0, 0.08]}
+            renderOrder={4}
+            onPointerOver={(event) => {
+              event.stopPropagation()
+              irisHovered.current = true
+              document.body.style.cursor = 'pointer'
+            }}
+            onPointerOut={(event) => {
+              event.stopPropagation()
+              irisHovered.current = false
+              document.body.style.cursor = 'default'
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              irisHovered.current = false
+              document.body.style.cursor = 'default'
+              onSelect()
+            }}
+          >
+            <circleGeometry args={[1, 64]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
+        </group>
+
+        <mesh position={[0, 0, 0.98]} renderOrder={2} raycast={() => {}}>
           <primitive object={asciiSurface} attach="geometry" />
           <meshBasicMaterial
             map={asset.texture}
@@ -328,7 +448,19 @@ export function EyeModel({ glowing, loggedToday }: EyeModelProps) {
           />
         </mesh>
 
-        <mesh scale={[1.76, 1.5, 1.41]}>
+        <sprite ref={glare} position={[-0.28, 0.28, 1.565]} scale={[0.44, 0.44, 1]} raycast={() => {}}>
+          <spriteMaterial
+            map={glareTexture}
+            color="#e7f8fc"
+            transparent
+            opacity={0.58}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </sprite>
+
+        <mesh scale={[1.76, 1.5, 1.41]} raycast={() => {}}>
           <sphereGeometry args={[1, 128, 96]} />
           <meshPhysicalMaterial
             color="#dce9ff"

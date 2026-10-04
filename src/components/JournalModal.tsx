@@ -35,7 +35,7 @@ export function JournalModal({ dateKey, existing, onClose, onSave }: JournalModa
         <p className="journal-kicker">A quiet record</p>
         <h2>{formatLongDate(date)}</h2>
         <p className="journal-copy">
-          Log whether you used eye contact today, and anything you noticed while meeting someone’s gaze.
+          Log whether you used contact lenses today, and anything you noticed while meeting another gaze.
         </p>
 
         <label className={`toggle ${used ? 'is-on' : ''}`}>
@@ -51,7 +51,7 @@ export function JournalModal({ dateKey, existing, onClose, onSave }: JournalModa
           id="journal-note"
           value={note}
           onChange={(event) => setNote(event.target.value)}
-          placeholder="A barista’s smile. Soft morning light. A friend who looked back."
+          placeholder="A barista’s smile. The greeting of a soft morning light. A reunion with an old friend."
           rows={6}
         />
 
